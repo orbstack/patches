@@ -1,0 +1,190 @@
+diff --git a/linux-user/fd-trans.c b/linux-user/fd-trans.c
+index 7b25468d0..a151fc49c 100644
+--- a/linux-user/fd-trans.c
++++ b/linux-user/fd-trans.c
+@@ -1238,43 +1238,6 @@ static abi_long host_to_target_data_route(struct nlmsghdr *nlh)
+     struct rtmsg *rtm;
+ 
+     nlmsg_len = nlh->nlmsg_len;
+-    switch (nlh->nlmsg_type) {
+-    case RTM_NEWLINK:
+-    case RTM_DELLINK:
+-    case RTM_GETLINK:
+-        if (nlh->nlmsg_len >= NLMSG_LENGTH(sizeof(*ifi))) {
+-            ifi = NLMSG_DATA(nlh);
+-            ifi->ifi_type = tswap16(ifi->ifi_type);
+-            ifi->ifi_index = tswap32(ifi->ifi_index);
+-            ifi->ifi_flags = tswap32(ifi->ifi_flags);
+-            ifi->ifi_change = tswap32(ifi->ifi_change);
+-            host_to_target_link_rtattr(IFLA_RTA(ifi),
+-                                       nlmsg_len - NLMSG_LENGTH(sizeof(*ifi)));
+-        }
+-        break;
+-    case RTM_NEWADDR:
+-    case RTM_DELADDR:
+-    case RTM_GETADDR:
+-        if (nlh->nlmsg_len >= NLMSG_LENGTH(sizeof(*ifa))) {
+-            ifa = NLMSG_DATA(nlh);
+-            ifa->ifa_index = tswap32(ifa->ifa_index);
+-            host_to_target_addr_rtattr(IFA_RTA(ifa),
+-                                       nlmsg_len - NLMSG_LENGTH(sizeof(*ifa)));
+-        }
+-        break;
+-    case RTM_NEWROUTE:
+-    case RTM_DELROUTE:
+-    case RTM_GETROUTE:
+-        if (nlh->nlmsg_len >= NLMSG_LENGTH(sizeof(*rtm))) {
+-            rtm = NLMSG_DATA(nlh);
+-            rtm->rtm_flags = tswap32(rtm->rtm_flags);
+-            host_to_target_route_rtattr(RTM_RTA(rtm),
+-                                        nlmsg_len - NLMSG_LENGTH(sizeof(*rtm)));
+-        }
+-        break;
+-    default:
+-        return -TARGET_EINVAL;
+-    }
+     return 0;
+ }
+ 
+@@ -1398,44 +1361,6 @@ static abi_long target_to_host_data_route(struct nlmsghdr *nlh)
+     struct ifaddrmsg *ifa;
+     struct rtmsg *rtm;
+ 
+-    switch (nlh->nlmsg_type) {
+-    case RTM_NEWLINK:
+-    case RTM_DELLINK:
+-    case RTM_SETLINK:
+-    case RTM_GETLINK:
+-        if (nlh->nlmsg_len >= NLMSG_LENGTH(sizeof(*ifi))) {
+-            ifi = NLMSG_DATA(nlh);
+-            ifi->ifi_type = tswap16(ifi->ifi_type);
+-            ifi->ifi_index = tswap32(ifi->ifi_index);
+-            ifi->ifi_flags = tswap32(ifi->ifi_flags);
+-            ifi->ifi_change = tswap32(ifi->ifi_change);
+-            target_to_host_link_rtattr(IFLA_RTA(ifi), nlh->nlmsg_len -
+-                                       NLMSG_LENGTH(sizeof(*ifi)));
+-        }
+-        break;
+-    case RTM_GETADDR:
+-    case RTM_NEWADDR:
+-    case RTM_DELADDR:
+-        if (nlh->nlmsg_len >= NLMSG_LENGTH(sizeof(*ifa))) {
+-            ifa = NLMSG_DATA(nlh);
+-            ifa->ifa_index = tswap32(ifa->ifa_index);
+-            target_to_host_addr_rtattr(IFA_RTA(ifa), nlh->nlmsg_len -
+-                                       NLMSG_LENGTH(sizeof(*ifa)));
+-        }
+-        break;
+-    case RTM_NEWROUTE:
+-    case RTM_DELROUTE:
+-    case RTM_GETROUTE:
+-        if (nlh->nlmsg_len >= NLMSG_LENGTH(sizeof(*rtm))) {
+-            rtm = NLMSG_DATA(nlh);
+-            rtm->rtm_flags = tswap32(rtm->rtm_flags);
+-            target_to_host_route_rtattr(RTM_RTA(rtm), nlh->nlmsg_len -
+-                                        NLMSG_LENGTH(sizeof(*rtm)));
+-        }
+-        break;
+-    default:
+-        return -TARGET_EOPNOTSUPP;
+-    }
+     return 0;
+ }
+ 
+diff --git a/linux-user/generic/sockbits.h b/linux-user/generic/sockbits.h
+index b3b4a8e44..c2df5be2c 100644
+--- a/linux-user/generic/sockbits.h
++++ b/linux-user/generic/sockbits.h
+@@ -12,6 +12,7 @@
+ 
+ /* For setsockopt(2) */
+ #define TARGET_SOL_SOCKET      1
++#define TARGET_SOL_PACKET       263
+ 
+ #define TARGET_SO_DEBUG        1
+ #define TARGET_SO_REUSEADDR    2
+diff --git a/linux-user/syscall.c b/linux-user/syscall.c
+index f40912120..596264bd6 100644
+--- a/linux-user/syscall.c
++++ b/linux-user/syscall.c
+@@ -2155,6 +2155,7 @@ static abi_long do_setsockopt(int sockfd, int level, int optname,
+         case IPV6_MTU:
+         case IPV6_V6ONLY:
+         case IPV6_RECVPKTINFO:
++        case IPV6_MULTICAST_IF:
+         case IPV6_UNICAST_HOPS:
+         case IPV6_MULTICAST_HOPS:
+         case IPV6_MULTICAST_LOOP:
+@@ -2491,6 +2492,39 @@ set_timeout:
+ 	if (get_user_u32(val, optval_addr))
+             return -TARGET_EFAULT;
+ 	ret = get_errno(setsockopt(sockfd, SOL_SOCKET, optname, &val, sizeof(val)));
++        break;
++    case TARGET_SOL_PACKET:
++        switch (optname) {
++        case PACKET_ADD_MEMBERSHIP:
++        {
++            struct packet_mreq mreq;
++
++            if (optlen < sizeof(struct packet_mreq))
++                return -TARGET_EINVAL;
++
++            if (copy_from_user(&mreq, optval_addr, sizeof(struct packet_mreq)))
++                return -TARGET_EFAULT;
++
++            ret = get_errno(setsockopt(sockfd, SOL_PACKET, optname, &mreq, optlen));
++            break;
++        }
++        case PACKET_AUXDATA:
++        {
++            uint32_t val;
++
++            if (optlen < sizeof(uint32_t))
++                return -TARGET_EINVAL;
++
++            if (get_user_u32(val, optval_addr))
++                return -TARGET_EFAULT;
++
++            ret = get_errno(setsockopt(sockfd, SOL_PACKET, optname, &val, optlen));
++            break;
++        }
++        default:
++            goto unimplemented;
++        }
++
+         break;
+ #ifdef SOL_NETLINK
+     case SOL_NETLINK:
+@@ -3144,8 +3178,11 @@ static abi_long do_socket(int domain, int type, int protocol)
+ #ifdef CONFIG_RTNETLINK
+          protocol == NETLINK_ROUTE ||
+ #endif
++         protocol == NETLINK_GENERIC ||
+          protocol == NETLINK_KOBJECT_UEVENT ||
+-         protocol == NETLINK_AUDIT)) {
++         protocol == NETLINK_AUDIT ||
++         protocol == NETLINK_FIREWALL ||
++         protocol == NETLINK_IP6_FW)) {
+         return -TARGET_EPROTONOSUPPORT;
+     }
+ 
+@@ -3169,12 +3206,19 @@ static abi_long do_socket(int domain, int type, int protocol)
+                 fd_trans_register(ret, &target_netlink_route_trans);
+                 break;
+ #endif
++            case NETLINK_GENERIC:
++                /* we always emulate same endian */
++                break;
+             case NETLINK_KOBJECT_UEVENT:
+                 /* nothing to do: messages are strings */
+                 break;
+             case NETLINK_AUDIT:
+                 fd_trans_register(ret, &target_netlink_audit_trans);
+                 break;
++            case NETLINK_FIREWALL:
++                break;
++            case NETLINK_IP6_FW:
++                break;
+             default:
+                 g_assert_not_reached();
+             }
