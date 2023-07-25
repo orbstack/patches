@@ -104,10 +104,23 @@ index b3b4a8e44..c2df5be2c 100644
  #define TARGET_SO_DEBUG        1
  #define TARGET_SO_REUSEADDR    2
 diff --git a/linux-user/syscall.c b/linux-user/syscall.c
-index f40912120..596264bd6 100644
+index f40912120..17c8657dc 100644
 --- a/linux-user/syscall.c
 +++ b/linux-user/syscall.c
-@@ -2155,6 +2155,7 @@ static abi_long do_setsockopt(int sockfd, int level, int optname,
+@@ -1,3 +1,4 @@
++#define _GNU_SOURCE
+ /*
+  *  Linux syscalls
+  *
+@@ -80,6 +81,7 @@
+ #ifdef HAVE_SYS_KCOV_H
+ #include <sys/kcov.h>
+ #endif
++#include <fcntl.h>
+ 
+ #define termios host_termios
+ #define winsize host_winsize
+@@ -2155,6 +2157,7 @@ static abi_long do_setsockopt(int sockfd, int level, int optname,
          case IPV6_MTU:
          case IPV6_V6ONLY:
          case IPV6_RECVPKTINFO:
@@ -115,7 +128,7 @@ index f40912120..596264bd6 100644
          case IPV6_UNICAST_HOPS:
          case IPV6_MULTICAST_HOPS:
          case IPV6_MULTICAST_LOOP:
-@@ -2491,6 +2492,39 @@ set_timeout:
+@@ -2491,6 +2494,39 @@ set_timeout:
  	if (get_user_u32(val, optval_addr))
              return -TARGET_EFAULT;
  	ret = get_errno(setsockopt(sockfd, SOL_SOCKET, optname, &val, sizeof(val)));
@@ -155,36 +168,54 @@ index f40912120..596264bd6 100644
          break;
  #ifdef SOL_NETLINK
      case SOL_NETLINK:
-@@ -3144,8 +3178,11 @@ static abi_long do_socket(int domain, int type, int protocol)
- #ifdef CONFIG_RTNETLINK
-          protocol == NETLINK_ROUTE ||
- #endif
-+         protocol == NETLINK_GENERIC ||
-          protocol == NETLINK_KOBJECT_UEVENT ||
--         protocol == NETLINK_AUDIT)) {
-+         protocol == NETLINK_AUDIT ||
-+         protocol == NETLINK_FIREWALL ||
-+         protocol == NETLINK_IP6_FW)) {
-         return -TARGET_EPROTONOSUPPORT;
-     }
+@@ -3135,50 +3171,9 @@ static abi_long do_socket(int domain, int type, int protocol)
+     int target_type = type;
+     int ret;
  
-@@ -3169,12 +3206,19 @@ static abi_long do_socket(int domain, int type, int protocol)
-                 fd_trans_register(ret, &target_netlink_route_trans);
-                 break;
- #endif
-+            case NETLINK_GENERIC:
-+                /* we always emulate same endian */
-+                break;
-             case NETLINK_KOBJECT_UEVENT:
-                 /* nothing to do: messages are strings */
-                 break;
-             case NETLINK_AUDIT:
-                 fd_trans_register(ret, &target_netlink_audit_trans);
-                 break;
-+            case NETLINK_FIREWALL:
-+                break;
-+            case NETLINK_IP6_FW:
-+                break;
-             default:
-                 g_assert_not_reached();
-             }
+-    ret = target_to_host_sock_type(&type);
+-    if (ret) {
+-        return ret;
+-    }
+-
+-    if (domain == PF_NETLINK && !(
+-#ifdef CONFIG_RTNETLINK
+-         protocol == NETLINK_ROUTE ||
+-#endif
+-         protocol == NETLINK_KOBJECT_UEVENT ||
+-         protocol == NETLINK_AUDIT)) {
+-        return -TARGET_EPROTONOSUPPORT;
+-    }
+-
+-    if (domain == AF_PACKET ||
+-        (domain == AF_INET && type == SOCK_PACKET)) {
+-        protocol = tswap16(protocol);
+-    }
+-
+     ret = get_errno(socket(domain, type, protocol));
+     if (ret >= 0) {
+         ret = sock_flags_fixup(ret, target_type);
+-        if (type == SOCK_PACKET) {
+-            /* Manage an obsolete case :
+-             * if socket type is SOCK_PACKET, bind by name
+-             */
+-            fd_trans_register(ret, &target_packet_trans);
+-        } else if (domain == PF_NETLINK) {
+-            switch (protocol) {
+-#ifdef CONFIG_RTNETLINK
+-            case NETLINK_ROUTE:
+-                fd_trans_register(ret, &target_netlink_route_trans);
+-                break;
+-#endif
+-            case NETLINK_KOBJECT_UEVENT:
+-                /* nothing to do: messages are strings */
+-                break;
+-            case NETLINK_AUDIT:
+-                fd_trans_register(ret, &target_netlink_audit_trans);
+-                break;
+-            default:
+-                g_assert_not_reached();
+-            }
+-        }
+     }
+     return ret;
+ }
