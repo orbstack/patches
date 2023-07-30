@@ -1,98 +1,5 @@
-diff --git a/linux-user/fd-trans.c b/linux-user/fd-trans.c
-index 7b25468d0..a151fc49c 100644
---- a/linux-user/fd-trans.c
-+++ b/linux-user/fd-trans.c
-@@ -1238,43 +1238,6 @@ static abi_long host_to_target_data_route(struct nlmsghdr *nlh)
-     struct rtmsg *rtm;
- 
-     nlmsg_len = nlh->nlmsg_len;
--    switch (nlh->nlmsg_type) {
--    case RTM_NEWLINK:
--    case RTM_DELLINK:
--    case RTM_GETLINK:
--        if (nlh->nlmsg_len >= NLMSG_LENGTH(sizeof(*ifi))) {
--            ifi = NLMSG_DATA(nlh);
--            ifi->ifi_type = tswap16(ifi->ifi_type);
--            ifi->ifi_index = tswap32(ifi->ifi_index);
--            ifi->ifi_flags = tswap32(ifi->ifi_flags);
--            ifi->ifi_change = tswap32(ifi->ifi_change);
--            host_to_target_link_rtattr(IFLA_RTA(ifi),
--                                       nlmsg_len - NLMSG_LENGTH(sizeof(*ifi)));
--        }
--        break;
--    case RTM_NEWADDR:
--    case RTM_DELADDR:
--    case RTM_GETADDR:
--        if (nlh->nlmsg_len >= NLMSG_LENGTH(sizeof(*ifa))) {
--            ifa = NLMSG_DATA(nlh);
--            ifa->ifa_index = tswap32(ifa->ifa_index);
--            host_to_target_addr_rtattr(IFA_RTA(ifa),
--                                       nlmsg_len - NLMSG_LENGTH(sizeof(*ifa)));
--        }
--        break;
--    case RTM_NEWROUTE:
--    case RTM_DELROUTE:
--    case RTM_GETROUTE:
--        if (nlh->nlmsg_len >= NLMSG_LENGTH(sizeof(*rtm))) {
--            rtm = NLMSG_DATA(nlh);
--            rtm->rtm_flags = tswap32(rtm->rtm_flags);
--            host_to_target_route_rtattr(RTM_RTA(rtm),
--                                        nlmsg_len - NLMSG_LENGTH(sizeof(*rtm)));
--        }
--        break;
--    default:
--        return -TARGET_EINVAL;
--    }
-     return 0;
- }
- 
-@@ -1398,44 +1361,6 @@ static abi_long target_to_host_data_route(struct nlmsghdr *nlh)
-     struct ifaddrmsg *ifa;
-     struct rtmsg *rtm;
- 
--    switch (nlh->nlmsg_type) {
--    case RTM_NEWLINK:
--    case RTM_DELLINK:
--    case RTM_SETLINK:
--    case RTM_GETLINK:
--        if (nlh->nlmsg_len >= NLMSG_LENGTH(sizeof(*ifi))) {
--            ifi = NLMSG_DATA(nlh);
--            ifi->ifi_type = tswap16(ifi->ifi_type);
--            ifi->ifi_index = tswap32(ifi->ifi_index);
--            ifi->ifi_flags = tswap32(ifi->ifi_flags);
--            ifi->ifi_change = tswap32(ifi->ifi_change);
--            target_to_host_link_rtattr(IFLA_RTA(ifi), nlh->nlmsg_len -
--                                       NLMSG_LENGTH(sizeof(*ifi)));
--        }
--        break;
--    case RTM_GETADDR:
--    case RTM_NEWADDR:
--    case RTM_DELADDR:
--        if (nlh->nlmsg_len >= NLMSG_LENGTH(sizeof(*ifa))) {
--            ifa = NLMSG_DATA(nlh);
--            ifa->ifa_index = tswap32(ifa->ifa_index);
--            target_to_host_addr_rtattr(IFA_RTA(ifa), nlh->nlmsg_len -
--                                       NLMSG_LENGTH(sizeof(*ifa)));
--        }
--        break;
--    case RTM_NEWROUTE:
--    case RTM_DELROUTE:
--    case RTM_GETROUTE:
--        if (nlh->nlmsg_len >= NLMSG_LENGTH(sizeof(*rtm))) {
--            rtm = NLMSG_DATA(nlh);
--            rtm->rtm_flags = tswap32(rtm->rtm_flags);
--            target_to_host_route_rtattr(RTM_RTA(rtm), nlh->nlmsg_len -
--                                        NLMSG_LENGTH(sizeof(*rtm)));
--        }
--        break;
--    default:
--        return -TARGET_EOPNOTSUPP;
--    }
-     return 0;
- }
- 
 diff --git a/linux-user/generic/sockbits.h b/linux-user/generic/sockbits.h
-index b3b4a8e44..c2df5be2c 100644
+index b3b4a8e..c2df5be 100644
 --- a/linux-user/generic/sockbits.h
 +++ b/linux-user/generic/sockbits.h
 @@ -12,6 +12,7 @@
@@ -104,23 +11,10 @@ index b3b4a8e44..c2df5be2c 100644
  #define TARGET_SO_DEBUG        1
  #define TARGET_SO_REUSEADDR    2
 diff --git a/linux-user/syscall.c b/linux-user/syscall.c
-index f40912120..17c8657dc 100644
+index 333e6b7..96cc18d 100644
 --- a/linux-user/syscall.c
 +++ b/linux-user/syscall.c
-@@ -1,3 +1,4 @@
-+#define _GNU_SOURCE
- /*
-  *  Linux syscalls
-  *
-@@ -80,6 +81,7 @@
- #ifdef HAVE_SYS_KCOV_H
- #include <sys/kcov.h>
- #endif
-+#include <fcntl.h>
- 
- #define termios host_termios
- #define winsize host_winsize
-@@ -2155,6 +2157,7 @@ static abi_long do_setsockopt(int sockfd, int level, int optname,
+@@ -2181,6 +2181,7 @@ static abi_long do_setsockopt(int sockfd, int level, int optname,
          case IPV6_MTU:
          case IPV6_V6ONLY:
          case IPV6_RECVPKTINFO:
@@ -128,7 +22,7 @@ index f40912120..17c8657dc 100644
          case IPV6_UNICAST_HOPS:
          case IPV6_MULTICAST_HOPS:
          case IPV6_MULTICAST_LOOP:
-@@ -2491,6 +2494,39 @@ set_timeout:
+@@ -2517,6 +2518,39 @@ set_timeout:
  	if (get_user_u32(val, optval_addr))
              return -TARGET_EFAULT;
  	ret = get_errno(setsockopt(sockfd, SOL_SOCKET, optname, &val, sizeof(val)));
@@ -168,7 +62,15 @@ index f40912120..17c8657dc 100644
          break;
  #ifdef SOL_NETLINK
      case SOL_NETLINK:
-@@ -3135,50 +3171,9 @@ static abi_long do_socket(int domain, int type, int protocol)
+@@ -2847,6 +2881,7 @@ get_timeout:
+         case IPV6_MTU:
+         case IPV6_V6ONLY:
+         case IPV6_RECVPKTINFO:
++        case IPV6_MULTICAST_IF:
+         case IPV6_UNICAST_HOPS:
+         case IPV6_MULTICAST_HOPS:
+         case IPV6_MULTICAST_LOOP:
+@@ -3166,20 +3201,6 @@ static abi_long do_socket(int domain, int type, int protocol)
      int target_type = type;
      int ret;
  
@@ -186,11 +88,10 @@ index f40912120..17c8657dc 100644
 -        return -TARGET_EPROTONOSUPPORT;
 -    }
 -
--    if (domain == AF_PACKET ||
--        (domain == AF_INET && type == SOCK_PACKET)) {
--        protocol = tswap16(protocol);
--    }
--
+     if (domain == AF_PACKET ||
+         (domain == AF_INET && type == SOCK_PACKET)) {
+         protocol = tswap16(protocol);
+@@ -3188,28 +3209,6 @@ static abi_long do_socket(int domain, int type, int protocol)
      ret = get_errno(socket(domain, type, protocol));
      if (ret >= 0) {
          ret = sock_flags_fixup(ret, target_type);
